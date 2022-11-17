@@ -43,6 +43,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 use std::thread;
 use std::thread::JoinHandle;
+use crate::datakit::Sample;
 
 #[cfg(unix)]
 fn permission_denied(err: &Error) -> bool {
@@ -137,12 +138,13 @@ fn new_output(config: &Config) -> Result<Box<dyn Recorder>, Error> {
 }
 
 fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error> {
-    let datakit = "datakit";
+    let cmd_datakit = "datakit";
 
-    let mut channel_sender:Option<Sender<Vec<u8>>> = None;
+    let mut channel_sender:Option<Sender<Sample>> = None;
     let mut sub_thread:Option<JoinHandle<()>> = None;
+    let mut profile_start_time;
 
-    if config.command.as_str() == datakit{
+    if config.command.as_str() == cmd_datakit {
         let (tx, rx) = mpsc::channel();
         channel_sender = Some(tx);
 
@@ -154,18 +156,23 @@ fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error>
         let endpoint = format!("http://{}:{}{}", config.host, config.port, datakit::PROFILING_ENDPOINT_V1);
 
 
-        let mut map:HashMap<String, String> = HashMap::new();
-        map.insert(String::from("process_id"), pid.to_string());
-        map.insert(String::from("service"), config.service.clone());
-        map.insert(String::from("env"), config.env.clone());
-        map.insert(String::from("version"), config.version.clone());
+        let map:HashMap<String, String> = HashMap::from([
+            (String::from("process_id"), pid.to_string()),
+            (String::from("service"), config.service.clone()),
+            (String::from("env"), config.env.clone()),
+            (String::from("version"), config.version.clone()),
+            (String::from("host"), match sys_info::hostname() {
+                Ok(host) => host,
+                Err(_) => String::new(),
+            })
+        ]);
 
         let handler = thread::spawn(move || {
 
             for v in rx {
                 match datakit::send_to_datakit(&client,
                                          &endpoint,
-                                         datakit::Event::new(&map, Utc::now(), Utc::now()),
+                                         datakit::Event::new(&map),
                                          v) {
                     Ok(resp) => println!("send profile to datakit success: {}", resp),
                     Err(e) => eprintln!("fail to send profile to datakit: {:?}", e)
@@ -180,7 +187,7 @@ fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error>
     let mut output: Box<dyn Recorder> = new_output(config)?;
 
     let mut filename = String::new();
-    if config.command.as_str() != datakit {
+    if config.command.as_str() != cmd_datakit {
         filename = match config.filename.clone() {
             Some(filename) => filename,
             None => {
@@ -204,6 +211,7 @@ fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error>
     }
 
     let sampler = sampler::Sampler::new(pid, config)?;
+    profile_start_time = Utc::now();
 
     // if we're not showing a progress bar, it's probably because we've spawned the process and
     // are displaying its stderr/stdout. In that case add a prefix to our println messages so
@@ -282,18 +290,24 @@ fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error>
         if let Some(max_intervals) = max_intervals {
             if intervals >= max_intervals {
                 exit_message = "";
-                if config.command.as_str() == datakit {
+                if config.command.as_str() == cmd_datakit {
 
                     let mut buf:Vec<u8> = Vec::with_capacity(128);
                     output.write(&mut buf)?;
+
                     if let Some(tx) = channel_sender.clone() {
-                        if let Err(e) = tx.send(buf) {
+                        if let Err(e) = tx.send(datakit::Sample{
+                            start: profile_start_time,
+                            end: Utc::now(),
+                            payload: buf,
+                        }) {
                             eprintln!("fail to send data to channel: {:?}", e)
                         }
                     }
 
                     output = new_output(config)?;
                     intervals = 0;
+                    profile_start_time = Utc::now()
                 } else {
                     break;
                 }
@@ -354,11 +368,15 @@ fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error>
         println!("\n{}{}", lede, exit_message);
     }
 
-    if config.command.as_str() == datakit {
+    if config.command.as_str() == cmd_datakit {
         let mut buf:Vec<u8> = Vec::with_capacity(128);
         output.write(&mut buf)?;
         if let Some(tx) = channel_sender {
-            if let Err(e) = tx.send(buf) {
+            if let Err(e) = tx.send(Sample{
+                start: profile_start_time,
+                end:Utc::now(),
+                payload: buf,
+            }) {
                 eprintln!("fail to send data to channel: {:?}", e)
             }
         }

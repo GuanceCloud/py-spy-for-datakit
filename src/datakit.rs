@@ -14,10 +14,16 @@ pub const PROFILING_ENDPOINT_V1:&str = "/profiling/v1/input";
 pub struct Event {
     pub attachments: Vec<String>,
     pub tags_profiler: String,
-    pub start: String,
-    pub end: String,
+    pub start: Option<String>,
+    pub end: Option<String>,
     pub family: String,
     pub version: String,
+}
+
+pub struct Sample {
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+    pub payload: Vec<u8>,
 }
 
 fn join_tags(tags: &HashMap<String, String>) -> String {
@@ -48,13 +54,13 @@ fn test_join_tags() {
 }
 
 impl Event {
-    pub fn new(tags: &HashMap<String, String>, start:DateTime<Utc>, end:DateTime<Utc>) -> Event {
+    pub fn new(tags: &HashMap<String, String>) -> Event {
 
         Event{
             attachments: vec![String::from("main.raw")],
             tags_profiler: join_tags(tags),
-            start: start.to_rfc3339_opts(SecondsFormat::Micros, true),
-            end: end.to_rfc3339_opts(SecondsFormat::Micros, true),
+            start: None,
+            end: None,
             family: "python".to_string(),
             version: VERSION.to_string(),
         }
@@ -62,14 +68,17 @@ impl Event {
     }
 }
 
-pub fn send_to_datakit(client:&Client, endpoint: &str, event: Event, data: Vec<u8>) -> Result<String, anyhow::Error> {
+pub fn send_to_datakit(client:&Client, endpoint: &str, mut event: Event, sample: Sample) -> Result<String, anyhow::Error> {
+
+    event.start = Some(sample.start.to_rfc3339_opts(SecondsFormat::Micros, true));
+    event.end = Some(sample.end.to_rfc3339_opts(SecondsFormat::Micros, true));
 
     let resp = client.post(endpoint)
         .multipart(Form::new()
             .part("event", Part::text(serde_json::to_string(&event)?)
                 .file_name("event.json")
                 .mime_str(mime::APPLICATION_OCTET_STREAM.as_ref())?)
-            .part("main", Part::bytes(data)
+            .part("main", Part::bytes(sample.payload)
                 .file_name("main.raw")
                 .mime_str(mime::APPLICATION_OCTET_STREAM.as_ref())?
             )

@@ -40,6 +40,7 @@ chrono = "0.4.19"
 reqwest = { version = "0.11", features = ["blocking", "json", "multipart"] }
 mime = "0.3.16"
 http = "0.2"
+sys-info = "0.9"
 
 [target.'cfg(unix)'.dependencies]
 termios = "0.3.3"
