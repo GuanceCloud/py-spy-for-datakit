@@ -533,6 +533,23 @@ impl PythonSpy {
         shortened
     }
 }
+
+pub fn resolve_python_version(pid: Pid) -> Result<Version, Error> {
+    let process = Process::new(pid)
+        .context("Failed to open process - check if it is running.")?;
+
+    // get basic process information (memory maps/symbols etc)
+    let python_info = PythonProcessInfo::new(&process)?;
+
+    // lock the process when loading up on freebsd (rather than locking
+    // on every memory read). Needs done after getting python process info
+    // because procmaps also tries to attach w/ ptrace on freebsd
+    #[cfg(target_os="freebsd")]
+        let _lock = process.lock();
+
+    return get_python_version(&python_info, &process)
+}
+
 /// Returns the version of python running in the process.
 fn get_python_version(python_info: &PythonProcessInfo, process: &remoteprocess::Process)
         -> Result<Version, Error> {

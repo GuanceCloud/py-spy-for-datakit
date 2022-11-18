@@ -7,7 +7,7 @@ use reqwest::blocking::multipart::{Form, Part};
 use mime;
 use serde_derive::Serialize;
 
-pub const VERSION:&str = "1";
+pub const VERSION:&str = "0.1";
 pub const PROFILING_ENDPOINT_V1:&str = "/profiling/v1/input";
 
 #[derive(Serialize)]
@@ -57,7 +57,7 @@ impl Event {
     pub fn new(tags: &HashMap<String, String>) -> Event {
 
         Event{
-            attachments: vec![String::from("main.raw")],
+            attachments: vec![String::from("main.txt")],
             tags_profiler: join_tags(tags),
             start: None,
             end: None,
@@ -79,7 +79,7 @@ pub fn send_to_datakit(client:&Client, endpoint: &str, mut event: Event, sample:
                 .file_name("event.json")
                 .mime_str(mime::APPLICATION_OCTET_STREAM.as_ref())?)
             .part("main", Part::bytes(sample.payload)
-                .file_name("main.raw")
+                .file_name("main.txt")
                 .mime_str(mime::APPLICATION_OCTET_STREAM.as_ref())?
             )
         )

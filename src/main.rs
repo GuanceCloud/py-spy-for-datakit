@@ -43,7 +43,8 @@ use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 use std::thread;
 use std::thread::JoinHandle;
-use crate::datakit::Sample;
+use datakit::Sample;
+use clap::crate_version;
 
 #[cfg(unix)]
 fn permission_denied(err: &Error) -> bool {
@@ -155,8 +156,14 @@ fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error>
 
         let endpoint = format!("http://{}:{}{}", config.host, config.port, datakit::PROFILING_ENDPOINT_V1);
 
+        let py_version = python_spy::resolve_python_version(pid)?;
 
         let map:HashMap<String, String> = HashMap::from([
+            (String::from("language"), String::from("python")),
+            (String::from("runtime_version"), format!("{}.{}.{}", py_version.major, py_version.minor, py_version.patch)),
+            (String::from("profiler"), String::from("py-spy")),
+            (String::from("profiler_version"), crate_version!().to_string()),
+            (String::from("format"), String::from("rawflamegraph")),
             (String::from("process_id"), pid.to_string()),
             (String::from("service"), config.service.clone()),
             (String::from("env"), config.env.clone()),
