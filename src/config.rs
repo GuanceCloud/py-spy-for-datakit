@@ -241,17 +241,6 @@ impl Config {
                 .takes_value(true))
             .arg(rate.clone())
             .arg(subprocesses.clone())
-            .arg(Arg::new("function")
-                .short('F')
-                .long("function")
-                .help("Aggregate samples by function's first line number, instead of current line number"))
-            .arg(Arg::new("nolineno")
-                .long("nolineno")
-                .help("Do not show line numbers"))
-            .arg(Arg::new("threads")
-                .short('t')
-                .long("threads")
-                .help("Show thread ids in the output"))
             .arg(gil.clone())
             .arg(idle.clone())
             .arg(Arg::new("capture")
@@ -388,9 +377,6 @@ impl Config {
                     Some("unlimited") | None => RecordDuration::Unlimited,
                     Some(seconds) => RecordDuration::Seconds(seconds.parse().expect("invalid duration"))
                 };
-                config.show_line_numbers = matches.occurrences_of("nolineno") == 0;
-                config.lineno = if matches.occurrences_of("nolineno") > 0 { LineNo::NoLine } else if matches.occurrences_of("function") > 0 { LineNo::FirstLineNo } else { LineNo::LastInstruction };
-                config.include_thread_ids = matches.occurrences_of("threads") > 0;
                 if matches.occurrences_of("nolineno") > 0 && matches.occurrences_of("function") > 0 {
                     eprintln!("--function & --nolinenos can't be used together");
                     std::process::exit(1);
@@ -418,7 +404,14 @@ impl Config {
                         Some(version) => version.to_owned(),
                         None => String::from("unnamed-version")
                     };
+                    config.show_line_numbers = true;
+                    config.lineno = LineNo::LastInstruction;
+                    config.include_thread_ids = true;
+                    config.hide_progress = true;
                 } else {
+                    config.show_line_numbers = matches.occurrences_of("nolineno") == 0;
+                    config.lineno = if matches.occurrences_of("nolineno") > 0 { LineNo::NoLine } else if matches.occurrences_of("function") > 0 { LineNo::FirstLineNo } else { LineNo::LastInstruction };
+                    config.include_thread_ids = matches.occurrences_of("threads") > 0;
                     config.format = Some(matches.value_of_t("format")?);
                     config.filename = matches.value_of("output").map(|f| f.to_owned());
                     config.hide_progress = matches.occurrences_of("hideprogress") > 0;
@@ -447,9 +440,6 @@ impl Config {
                 });
                 config.gil_only = matches.occurrences_of("gil") > 0;
                 config.include_idle = matches.occurrences_of("idle") > 0;
-                if subcommand == "datakit" {
-                    config.hide_progress = true;
-                }
             },
             _ => {}
         }

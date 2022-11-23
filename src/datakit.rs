@@ -13,6 +13,7 @@ pub const PROFILING_ENDPOINT_V1:&str = "/profiling/v1/input";
 #[derive(Serialize)]
 pub struct Event {
     pub attachments: Vec<String>,
+    pub format: Option<String>,
     pub tags_profiler: String,
     pub start: Option<String>,
     pub end: Option<String>,
@@ -58,6 +59,7 @@ impl Event {
 
         Event{
             attachments: vec![String::from("main.txt")],
+            format: Some(String::from("rawflamegraph")),
             tags_profiler: join_tags(tags),
             start: None,
             end: None,
