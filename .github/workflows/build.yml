@@ -149,7 +149,7 @@ jobs:
           ls -ahl build-artifacts.tar
       - name: Prepare binary for upload
         run: |
-          tar xf build-artifacts.tar target/release/py-spy
+          tar xf build-artifacts.tar target/release/py-spy-for-datakit
           mv target/release/py-spy-for-datakit py-spy-for-datakit-x86_64-unknown-freebsd
       - name: Upload Binaries
         uses: actions/upload-artifact@v2
