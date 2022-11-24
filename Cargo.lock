@@ -1170,7 +1170,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "py-spy"
+name = "py-spy-for-datakit"
 version = "0.3.14"
 dependencies = [
  "anyhow",

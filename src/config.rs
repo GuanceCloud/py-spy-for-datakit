@@ -231,7 +231,6 @@ impl Config {
             )
             .arg(program.clone())
             .arg(pid.clone().required_unless_present("python_program"))
-            .arg(full_filenames.clone())
             .arg(Arg::new("duration")
                 .short('d')
                 .long("duration")
@@ -377,10 +376,6 @@ impl Config {
                     Some("unlimited") | None => RecordDuration::Unlimited,
                     Some(seconds) => RecordDuration::Seconds(seconds.parse().expect("invalid duration"))
                 };
-                if matches.occurrences_of("nolineno") > 0 && matches.occurrences_of("function") > 0 {
-                    eprintln!("--function & --nolinenos can't be used together");
-                    std::process::exit(1);
-                }
                 if subcommand == "datakit" {
                     config.duration = match matches.value_of("duration") {
                         None => RecordDuration::Seconds(60),
@@ -409,6 +404,10 @@ impl Config {
                     config.include_thread_ids = true;
                     config.hide_progress = true;
                 } else {
+                    if matches.occurrences_of("nolineno") > 0 && matches.occurrences_of("function") > 0 {
+                        eprintln!("--function & --nolinenos can't be used together");
+                        std::process::exit(1);
+                    }
                     config.show_line_numbers = matches.occurrences_of("nolineno") == 0;
                     config.lineno = if matches.occurrences_of("nolineno") > 0 { LineNo::NoLine } else if matches.occurrences_of("function") > 0 { LineNo::FirstLineNo } else { LineNo::LastInstruction };
                     config.include_thread_ids = matches.occurrences_of("threads") > 0;
@@ -449,7 +448,11 @@ impl Config {
 
         // options that can be shared between subcommands
         config.pid = matches.value_of("pid").map(|p| p.parse().expect("invalid pid"));
-        config.full_filenames = matches.occurrences_of("full_filenames") > 0;
+        match subcommand {
+            "datakit" => config.full_filenames = true,
+            _ => config.full_filenames = matches.occurrences_of("full_filenames") > 0,
+        }
+
         if cfg!(unwind) {
             config.native = matches.occurrences_of("native") > 0;
         }
