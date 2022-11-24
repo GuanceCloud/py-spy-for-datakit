@@ -13,18 +13,18 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-linux-armv7:
-    runs-on: [self-hosted, linux, arm]
-    steps:
-    - name: Setup python
-      run: |
-        pyenv global system
-        python --version
-    - uses: actions/checkout@v2
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test
+#  build-linux-armv7:
+#    runs-on: [self-hosted, linux, arm]
+#    steps:
+#    - name: Setup python
+#      run: |
+#        pyenv global system
+#        python --version
+#    - uses: actions/checkout@v2
+#    - name: Build
+#      run: cargo build --verbose
+#    - name: Run tests
+#      run: cargo test
 
   build:
     runs-on: ${{ matrix.os }}
@@ -150,95 +150,95 @@ jobs:
       - name: Prepare binary for upload
         run: |
           tar xf build-artifacts.tar target/release/py-spy
-          mv target/release/py-spy py-spy-x86_64-unknown-freebsd
+          mv target/release/py-spy-for-datakit py-spy-for-datakit-x86_64-unknown-freebsd
       - name: Upload Binaries
         uses: actions/upload-artifact@v2
         with:
-          name: py-spy-x86_64-unknown-freebsd
-          path: py-spy-x86_64-unknown-freebsd
+          name: py-spy-for-datakit-x86_64-unknown-freebsd
+          path: py-spy-for-datakit-x86_64-unknown-freebsd
 
-  test-wheels:
-    name: Test Wheels
-    needs: [build, build-linux-cross]
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: [2.7.17, 2.7.18, 3.5.4, 3.5.9, 3.5.10, 3.6.7, 3.6.8, 3.6.9, 3.6.10, 3.6.11, 3.6.12, 3.6.13, 3.6.14, 3.6.15, 3.7.1, 3.7.5, 3.7.6, 3.7.7, 3.7.8, 3.7.9, 3.7.10, 3.7.11, 3.7.12, 3.7.13, 3.7.14, 3.8.0, 3.8.1, 3.8.2, 3.8.3, 3.8.4, 3.8.5, 3.8.6, 3.8.7, 3.8.8, 3.8.9, 3.8.10, 3.8.11, 3.8.12, 3.8.13, 3.8.14, 3.9.0, 3.9.1, 3.9.2, 3.9.3, 3.9.4, 3.9.5, 3.9.6, 3.9.7, 3.9.8, 3.9.9, 3.9.10, 3.9.11, 3.9.12, 3.9.13, 3.9.14, 3.10.0, 3.10.1, 3.10.2, 3.10.3, 3.10.4, 3.10.5, 3.10.6, 3.10.7, 3.11.0-beta.5]
-        # TODO: also test windows
-        os: [ubuntu-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/download-artifact@v2
-        with:
-          name: wheels
-      - uses: actions/setup-python@v2
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install wheel
-        run: |
-          pip install --force-reinstall --no-index --find-links . py-spy
-      - name: Test Wheel
-        id: test
-        run: python tests/integration_test.py
-        if: runner.os != 'macOS'
-        continue-on-error: true
-      - name: Test Wheel (Retry#1)
-        id: test1
-        run: python tests/integration_test.py
-        if: steps.test.outcome=='failure'
-        continue-on-error: true
-      - name: Test Wheel (Retry#2)
-        id: test2
-        run: python tests/integration_test.py
-        if: steps.test1.outcome=='failure'
-      - name: Test macOS Wheel
-        id: osx_test
-        run: sudo "PATH=$PATH" python tests/integration_test.py
-        if: runner.os == 'macOS'
-        continue-on-error: true
-      - name: Test macOS Wheel (Retry#1)
-        id: osx_test1
-        run: sudo "PATH=$PATH" python tests/integration_test.py
-        if: steps.osx_test.outcome=='failure'
-        continue-on-error: true
-      - name: Test macOS Wheel (Retry#2)
-        id: osx_test2
-        run: sudo "PATH=$PATH" python tests/integration_test.py
-        if: steps.osx_test1.outcome=='failure'
+#  test-wheels:
+#    name: Test Wheels
+#    needs: [build, build-linux-cross]
+#    runs-on: ${{ matrix.os }}
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        python-version: [2.7.17, 2.7.18, 3.5.4, 3.5.9, 3.5.10, 3.6.7, 3.6.8, 3.6.9, 3.6.10, 3.6.11, 3.6.12, 3.6.13, 3.6.14, 3.6.15, 3.7.1, 3.7.5, 3.7.6, 3.7.7, 3.7.8, 3.7.9, 3.7.10, 3.7.11, 3.7.12, 3.7.13, 3.7.14, 3.8.0, 3.8.1, 3.8.2, 3.8.3, 3.8.4, 3.8.5, 3.8.6, 3.8.7, 3.8.8, 3.8.9, 3.8.10, 3.8.11, 3.8.12, 3.8.13, 3.8.14, 3.9.0, 3.9.1, 3.9.2, 3.9.3, 3.9.4, 3.9.5, 3.9.6, 3.9.7, 3.9.8, 3.9.9, 3.9.10, 3.9.11, 3.9.12, 3.9.13, 3.9.14, 3.10.0, 3.10.1, 3.10.2, 3.10.3, 3.10.4, 3.10.5, 3.10.6, 3.10.7, 3.11.0-beta.5]
+#        # TODO: also test windows
+#        os: [ubuntu-latest, macos-latest]
+#    steps:
+#      - uses: actions/checkout@v2
+#      - uses: actions/download-artifact@v2
+#        with:
+#          name: wheels
+#      - uses: actions/setup-python@v2
+#        with:
+#          python-version: ${{ matrix.python-version }}
+#      - name: Install wheel
+#        run: |
+#          pip install --force-reinstall --no-index --find-links . py-spy
+#      - name: Test Wheel
+#        id: test
+#        run: python tests/integration_test.py
+#        if: runner.os != 'macOS'
+#        continue-on-error: true
+#      - name: Test Wheel (Retry#1)
+#        id: test1
+#        run: python tests/integration_test.py
+#        if: steps.test.outcome=='failure'
+#        continue-on-error: true
+#      - name: Test Wheel (Retry#2)
+#        id: test2
+#        run: python tests/integration_test.py
+#        if: steps.test1.outcome=='failure'
+#      - name: Test macOS Wheel
+#        id: osx_test
+#        run: sudo "PATH=$PATH" python tests/integration_test.py
+#        if: runner.os == 'macOS'
+#        continue-on-error: true
+#      - name: Test macOS Wheel (Retry#1)
+#        id: osx_test1
+#        run: sudo "PATH=$PATH" python tests/integration_test.py
+#        if: steps.osx_test.outcome=='failure'
+#        continue-on-error: true
+#      - name: Test macOS Wheel (Retry#2)
+#        id: osx_test2
+#        run: sudo "PATH=$PATH" python tests/integration_test.py
+#        if: steps.osx_test1.outcome=='failure'
 
-  test-wheel-linux-armv7:
-    name: Test ARMv7 Wheel
-    needs: [build-linux-cross]
-    runs-on: [self-hosted, linux, arm]
-    strategy:
-      matrix:
-        # we're installing the manylinux2014 wheel, so can
-        # only test out relatively recent versions of python
-        pyenv-python-version: [3.7.10, 3.8.9, 3.9.4]
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/download-artifact@v2
-        with:
-          name: wheels
-      - name: Setup pyenv
-        run: |
-          # build the version of python if not installed already
-          # (note this relies on pyenv being setup already)
-          pyenv install -s ${{ matrix.pyenv-python-version }}
-          pyenv global ${{ matrix.pyenv-python-version }}
-          python --version
-      - name: Install wheel
-        run: |
-          pip install --force-reinstall --no-index --find-links . py-spy
-      - name: Test Wheel
-        run: python tests/integration_test.py
+#  test-wheel-linux-armv7:
+#    name: Test ARMv7 Wheel
+#    needs: [build-linux-cross]
+#    runs-on: [self-hosted, linux, arm]
+#    strategy:
+#      matrix:
+#        # we're installing the manylinux2014 wheel, so can
+#        # only test out relatively recent versions of python
+#        pyenv-python-version: [3.7.10, 3.8.9, 3.9.4]
+#    steps:
+#      - uses: actions/checkout@v2
+#      - uses: actions/download-artifact@v2
+#        with:
+#          name: wheels
+#      - name: Setup pyenv
+#        run: |
+#          # build the version of python if not installed already
+#          # (note this relies on pyenv being setup already)
+#          pyenv install -s ${{ matrix.pyenv-python-version }}
+#          pyenv global ${{ matrix.pyenv-python-version }}
+#          python --version
+#      - name: Install wheel
+#        run: |
+#          pip install --force-reinstall --no-index --find-links . py-spy
+#      - name: Test Wheel
+#        run: python tests/integration_test.py
 
   release:
     name: Release
     runs-on: ubuntu-latest
     if: "startsWith(github.ref, 'refs/tags/')"
-    needs: [test-wheels, test-wheel-linux-armv7]
+#    needs: [test-wheels, test-wheel-linux-armv7]
     steps:
       - uses: actions/download-artifact@v2
         with:

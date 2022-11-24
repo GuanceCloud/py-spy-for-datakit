@@ -52,6 +52,13 @@ pub struct Config {
     pub full_filenames: bool,
     #[doc(hidden)]
     pub lineno: LineNo,
+
+    #[doc(hidden)]
+    pub host: String,
+    pub port: u32,
+    pub service: String,
+    pub env: String,
+    pub version: String,
 }
 
 #[allow(non_camel_case_types)]
@@ -116,7 +123,13 @@ impl Default for Config {
                duration: RecordDuration::Unlimited, native: false,
                gil_only: false, include_idle: false, include_thread_ids: false,
                hide_progress: false, capture_output: true, dump_json: false, dump_locals: 0, subprocesses: false,
-               full_filenames: false, lineno: LineNo::LastInstruction }
+               full_filenames: false, lineno: LineNo::LastInstruction,
+               host: String::from("127.0.0.1"),
+               port: 9529,
+               service: String::from("unnamed-service"),
+               env: String::from("unnamed-env"),
+               version: String::from("unnamed-version")
+        }
     }
 }
 
@@ -178,7 +191,61 @@ impl Config {
                 .short('g')
                 .long("gil")
                 .help("Only include traces that are holding on to the GIL");
-
+        let datakit = Command::new("datakit")
+            .about("It is almost same with \"record\" subcommand except that py-spy will send the output to datakit at intervals instead of writing into a local file only once")
+            .arg(Arg::new("host")
+                .short('H')
+                .long("host")
+                .value_name("host")
+                .help("The target datakit host")
+                .takes_value(true)
+                .default_value("127.0.0.1"))
+            .arg(Arg::new("port")
+                .short('P')
+                .long("port")
+                .value_name("port")
+                .help("The target datakit port")
+                .takes_value(true)
+                .default_value("9529"))
+            .arg(Arg::new("service")
+                .short('S')
+                .long("service")
+                .value_name("service")
+                .help("Your service name")
+                .takes_value(true)
+                .default_value("unnamed-service"))
+            .arg(Arg::new("env")
+                .short('E')
+                .long("env")
+                .value_name("env")
+                .help("Your deployment env, eg: dev, testing, prod...")
+                .takes_value(true)
+                .default_value("unnamed-env"))
+            .arg(Arg::new("version")
+                .short('V')
+                .long("version")
+                .value_name("version")
+                .help("Your service version")
+                .takes_value(true)
+                .default_value("unnamed-version")
+            )
+            .arg(program.clone())
+            .arg(pid.clone().required_unless_present("python_program"))
+            .arg(Arg::new("duration")
+                .short('d')
+                .long("duration")
+                .value_name("duration")
+                .help("The number of seconds to sample for")
+                .default_value("60")
+                .takes_value(true))
+            .arg(rate.clone())
+            .arg(subprocesses.clone())
+            .arg(gil.clone())
+            .arg(idle.clone())
+            .arg(Arg::new("capture")
+                .long("capture")
+                .hide(true)
+                .help("Captures output from child process"));
         let record = Command::new("record")
             .about("Records stack trace information to a flamegraph, speedscope or raw file")
             .arg(program.clone())
@@ -267,6 +334,8 @@ impl Config {
         #[cfg(unwind)]
         let record = record.arg(native.clone());
         #[cfg(unwind)]
+        let datakit = datakit.arg(native.clone());
+        #[cfg(unwind)]
         let top = top.arg(native.clone());
         #[cfg(unwind)]
         let dump = dump.arg(native.clone());
@@ -274,6 +343,8 @@ impl Config {
         // Nonblocking isn't an option for freebsd, remove
         #[cfg(not(target_os="freebsd"))]
         let record = record.arg(nonblocking.clone());
+        #[cfg(not(target_os="freebsd"))]
+        let datakit = datakit.arg(nonblocking.clone());
         #[cfg(not(target_os="freebsd"))]
         let top = top.arg(nonblocking.clone());
         #[cfg(not(target_os="freebsd"))]
@@ -287,6 +358,7 @@ impl Config {
             .arg_required_else_help(true)
             .global_setting(clap::AppSettings::DeriveDisplayOrder)
             .subcommand(record)
+            .subcommand(datakit)
             .subcommand(top)
             .subcommand(dump)
             .subcommand(completions);
@@ -298,22 +370,51 @@ impl Config {
         let (subcommand, matches) = matches.subcommand().unwrap();
 
         match subcommand {
-            "record" => {
+            "record" | "datakit" => {
                 config.sampling_rate = matches.value_of_t("rate")?;
                 config.duration = match matches.value_of("duration") {
                     Some("unlimited") | None => RecordDuration::Unlimited,
                     Some(seconds) => RecordDuration::Seconds(seconds.parse().expect("invalid duration"))
                 };
-                config.format = Some(matches.value_of_t("format")?);
-                config.filename = matches.value_of("output").map(|f| f.to_owned());
-                config.show_line_numbers = matches.occurrences_of("nolineno") == 0;
-                config.lineno = if matches.occurrences_of("nolineno") > 0 { LineNo::NoLine } else if matches.occurrences_of("function") > 0 { LineNo::FirstLineNo } else { LineNo::LastInstruction };
-                config.include_thread_ids = matches.occurrences_of("threads") > 0;
-                if matches.occurrences_of("nolineno") > 0 && matches.occurrences_of("function") > 0 {
-                    eprintln!("--function & --nolinenos can't be used together");
-                    std::process::exit(1);
+                if subcommand == "datakit" {
+                    config.duration = match matches.value_of("duration") {
+                        None => RecordDuration::Seconds(60),
+                        Some(seconds) => RecordDuration::Seconds(seconds.parse().expect("invalid duration"))
+                    };
+
+                    config.host = match matches.value_of("host") {
+                        Some(host) => host.to_owned(),
+                        None => String::from("127.0.0.1")
+                    };
+                    config.port = matches.value_of_t("port")?;
+                    config.service = match matches.value_of("service") {
+                        Some(service) => service.to_owned(),
+                        None => String::from("unnamed-service")
+                    };
+                    config.env = match matches.value_of("env") {
+                        Some(env) => env.to_owned(),
+                        None => String::from("unnamed-env")
+                    };
+                    config.version = match matches.value_of("version") {
+                        Some(version) => version.to_owned(),
+                        None => String::from("unnamed-version")
+                    };
+                    config.show_line_numbers = true;
+                    config.lineno = LineNo::LastInstruction;
+                    config.include_thread_ids = true;
+                    config.hide_progress = true;
+                } else {
+                    if matches.occurrences_of("nolineno") > 0 && matches.occurrences_of("function") > 0 {
+                        eprintln!("--function & --nolinenos can't be used together");
+                        std::process::exit(1);
+                    }
+                    config.show_line_numbers = matches.occurrences_of("nolineno") == 0;
+                    config.lineno = if matches.occurrences_of("nolineno") > 0 { LineNo::NoLine } else if matches.occurrences_of("function") > 0 { LineNo::FirstLineNo } else { LineNo::LastInstruction };
+                    config.include_thread_ids = matches.occurrences_of("threads") > 0;
+                    config.format = Some(matches.value_of_t("format")?);
+                    config.filename = matches.value_of("output").map(|f| f.to_owned());
+                    config.hide_progress = matches.occurrences_of("hideprogress") > 0;
                 }
-                config.hide_progress = matches.occurrences_of("hideprogress") > 0;
             },
             "top" => {
                 config.sampling_rate = matches.value_of_t("rate")?;
@@ -332,7 +433,7 @@ impl Config {
         }
 
         match subcommand {
-            "record" | "top" => {
+            "record" | "top" | "datakit" => {
                 config.python_program = matches.values_of("python_program").map(|vals| {
                     vals.map(|v| v.to_owned()).collect()
                 });
@@ -347,7 +448,11 @@ impl Config {
 
         // options that can be shared between subcommands
         config.pid = matches.value_of("pid").map(|p| p.parse().expect("invalid pid"));
-        config.full_filenames = matches.occurrences_of("full_filenames") > 0;
+        match subcommand {
+            "datakit" => config.full_filenames = true,
+            _ => config.full_filenames = matches.occurrences_of("full_filenames") > 0,
+        }
+
         if cfg!(unwind) {
             config.native = matches.occurrences_of("native") > 0;
         }

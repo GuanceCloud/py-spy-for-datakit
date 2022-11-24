@@ -23,7 +23,9 @@ mod sampler;
 mod timer;
 mod utils;
 mod version;
+mod datakit;
 
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -36,7 +38,13 @@ use stack_trace::{StackTrace, Frame};
 use console_viewer::ConsoleViewer;
 use config::{Config, FileFormat, RecordDuration};
 
-use chrono::{SecondsFormat, Local};
+use chrono::{SecondsFormat, Local, Utc};
+use std::sync::mpsc;
+use std::sync::mpsc::Sender;
+use std::thread;
+use std::thread::JoinHandle;
+use datakit::Sample;
+use clap::crate_version;
 
 #[cfg(unix)]
 fn permission_denied(err: &Error) -> bool {
@@ -117,36 +125,100 @@ impl Recorder for RawFlamegraph {
     }
 }
 
-fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error> {
-    let mut output: Box<dyn Recorder> = match config.format {
-        Some(FileFormat::flamegraph) => Box::new(flamegraph::Flamegraph::new(config.show_line_numbers)),
-        Some(FileFormat::speedscope) =>  Box::new(speedscope::Stats::new(config)),
-        Some(FileFormat::raw) => Box::new(RawFlamegraph(flamegraph::Flamegraph::new(config.show_line_numbers))),
-        None => return Err(format_err!("A file format is required to record samples"))
-    };
+fn new_output(config: &Config) -> Result<Box<dyn Recorder>, Error> {
+    match config.command.as_str() {
+        // datakit 固定用 raw flamegraph 格式
+        "datakit" => Ok(Box::new(RawFlamegraph(flamegraph::Flamegraph::new(config.show_line_numbers)))),
+        _ => match config.format {
+            Some(FileFormat::flamegraph) => Ok(Box::new(flamegraph::Flamegraph::new(config.show_line_numbers))),
+            Some(FileFormat::speedscope) => Ok(Box::new(speedscope::Stats::new(config))),
+            Some(FileFormat::raw) => Ok(Box::new(RawFlamegraph(flamegraph::Flamegraph::new(config.show_line_numbers)))),
+            None => Err(format_err!("A file format is required to record samples"))
+        }
+    }
+}
 
-    let filename = match config.filename.clone() {
-        Some(filename) => filename,
-        None => {
-            let ext = match config.format.as_ref() {
-                Some(FileFormat::flamegraph) => "svg",
-                Some(FileFormat::speedscope) => "json",
-                Some(FileFormat::raw) => "txt",
-                None => return Err(format_err!("A file format is required to record samples"))
-            };
-            let local_time = Local::now().to_rfc3339_opts(SecondsFormat::Secs, true);
-            let name = match config.python_program.as_ref() {
-                Some(prog) => prog[0].to_string(),
-                None  => match config.pid.as_ref() {
-                    Some(pid) => pid.to_string(),
-                    None => String::from("unknown")
+fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error> {
+    let cmd_datakit = "datakit";
+
+    let mut channel_sender:Option<Sender<Sample>> = None;
+    let mut sub_thread:Option<JoinHandle<()>> = None;
+    let mut profile_start_time;
+
+    if config.command.as_str() == cmd_datakit {
+        let (tx, rx) = mpsc::channel();
+        channel_sender = Some(tx);
+
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(60))
+            .connect_timeout(Duration::from_secs(10))
+            .build()?;
+
+        let endpoint = format!("http://{}:{}{}", config.host, config.port, datakit::PROFILING_ENDPOINT_V1);
+
+        let py_version = python_spy::resolve_python_version(pid)?;
+
+        let map:HashMap<String, String> = HashMap::from([
+            (String::from("language"), String::from("python")),
+            (String::from("runtime_version"), format!("{}.{}.{}", py_version.major, py_version.minor, py_version.patch)),
+            (String::from("profiler"), String::from("py-spy")),
+            (String::from("profiler_version"), crate_version!().to_string()),
+            (String::from("format"), String::from("rawflamegraph")),
+            (String::from("process_id"), pid.to_string()),
+            (String::from("service"), config.service.clone()),
+            (String::from("env"), config.env.clone()),
+            (String::from("version"), config.version.clone()),
+            (String::from("host"), match sys_info::hostname() {
+                Ok(host) => host,
+                Err(_) => String::new(),
+            })
+        ]);
+
+        let handler = thread::spawn(move || {
+
+            for v in rx {
+                match datakit::send_to_datakit(&client,
+                                         &endpoint,
+                                         datakit::Event::new(&map),
+                                         v) {
+                    Ok(resp) => println!("send profile to datakit success: {}", resp),
+                    Err(e) => eprintln!("fail to send profile to datakit: {:?}", e)
                 }
-            };
-            format!("{}-{}.{}", name, local_time, ext)
             }
-    };
+        });
+
+        sub_thread = Some(handler);
+
+    }
+
+    let mut output: Box<dyn Recorder> = new_output(config)?;
+
+    let mut filename = String::new();
+    if config.command.as_str() != cmd_datakit {
+        filename = match config.filename.clone() {
+            Some(filename) => filename,
+            None => {
+                let ext = match config.format.as_ref() {
+                    Some(FileFormat::flamegraph) => "svg",
+                    Some(FileFormat::speedscope) => "json",
+                    Some(FileFormat::raw) => "txt",
+                    None => return Err(format_err!("A file format is required to record samples"))
+                };
+                let local_time = Local::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+                let name = match config.python_program.as_ref() {
+                    Some(prog) => prog[0].to_string(),
+                    None  => match config.pid.as_ref() {
+                        Some(pid) => pid.to_string(),
+                        None => String::from("unknown")
+                    }
+                };
+                format!("{}-{}.{}", name, local_time, ext)
+            }
+        };
+    }
 
     let sampler = sampler::Sampler::new(pid, config)?;
+    profile_start_time = Utc::now();
 
     // if we're not showing a progress bar, it's probably because we've spawned the process and
     // are displaying its stderr/stdout. In that case add a prefix to our println messages so
@@ -225,7 +297,27 @@ fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error>
         if let Some(max_intervals) = max_intervals {
             if intervals >= max_intervals {
                 exit_message = "";
-                break;
+                if config.command.as_str() == cmd_datakit {
+
+                    let mut buf:Vec<u8> = Vec::with_capacity(128);
+                    output.write(&mut buf)?;
+
+                    if let Some(tx) = channel_sender.clone() {
+                        if let Err(e) = tx.send(datakit::Sample{
+                            start: profile_start_time,
+                            end: Utc::now(),
+                            payload: buf,
+                        }) {
+                            eprintln!("fail to send data to channel: {:?}", e)
+                        }
+                    }
+
+                    output = new_output(config)?;
+                    intervals = 0;
+                    profile_start_time = Utc::now()
+                } else {
+                    break;
+                }
             }
         }
 
@@ -283,29 +375,49 @@ fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error>
         println!("\n{}{}", lede, exit_message);
     }
 
-    {
-    let mut out_file = std::fs::File::create(&filename)?;
-    output.write(&mut out_file)?;
-    }
-
-    match config.format.as_ref().unwrap() {
-        FileFormat::flamegraph => {
-            println!("{}Wrote flamegraph data to '{}'. Samples: {} Errors: {}", lede, filename, samples, errors);
-            // open generated flame graph in the browser on OSX (theory being that on linux
-            // you might be SSH'ed into a server somewhere and this isn't desired, but on
-            // that is pretty unlikely for osx) (note to self: xdg-open will open on linux)
-            #[cfg(target_os = "macos")]
-            std::process::Command::new("open").arg(&filename).spawn()?;
-        },
-        FileFormat::speedscope =>  {
-            println!("{}Wrote speedscope file to '{}'. Samples: {} Errors: {}", lede, filename, samples, errors);
-            println!("{}Visit https://www.speedscope.app/ to view", lede);
-        },
-        FileFormat::raw => {
-            println!("{}Wrote raw flamegraph data to '{}'. Samples: {} Errors: {}", lede, filename, samples, errors);
-            println!("{}You can use the flamegraph.pl script from https://github.com/brendangregg/flamegraph to generate a SVG", lede);
+    if config.command.as_str() == cmd_datakit {
+        let mut buf:Vec<u8> = Vec::with_capacity(128);
+        output.write(&mut buf)?;
+        if let Some(tx) = channel_sender {
+            if let Err(e) = tx.send(Sample{
+                start: profile_start_time,
+                end:Utc::now(),
+                payload: buf,
+            }) {
+                eprintln!("fail to send data to channel: {:?}", e)
+            }
         }
-    };
+
+        channel_sender = None;
+        if let Some(handler) = sub_thread {
+            if let Err(e) = handler.join() {
+                eprintln!("wait sub thread finish fail: {:?}", e);
+            }
+        }
+
+    } else {
+        let mut out_file = std::fs::File::create(&filename)?;
+        output.write(&mut out_file)?;
+
+        match config.format.as_ref().unwrap() {
+            FileFormat::flamegraph => {
+                println!("{}Wrote flamegraph data to '{}'. Samples: {} Errors: {}", lede, filename, samples, errors);
+                // open generated flame graph in the browser on OSX (theory being that on linux
+                // you might be SSH'ed into a server somewhere and this isn't desired, but on
+                // that is pretty unlikely for osx) (note to self: xdg-open will open on linux)
+                #[cfg(target_os = "macos")]
+                std::process::Command::new("open").arg(&filename).spawn()?;
+            },
+            FileFormat::speedscope =>  {
+                println!("{}Wrote speedscope file to '{}'. Samples: {} Errors: {}", lede, filename, samples, errors);
+                println!("{}Visit https://www.speedscope.app/ to view", lede);
+            },
+            FileFormat::raw => {
+                println!("{}Wrote raw flamegraph data to '{}'. Samples: {} Errors: {}", lede, filename, samples, errors);
+                println!("{}You can use the flamegraph.pl script from https://github.com/brendangregg/flamegraph to generate a SVG", lede);
+            }
+        };
+    }
 
     Ok(())
 }
@@ -315,7 +427,7 @@ fn run_spy_command(pid: remoteprocess::Pid, config: &config::Config) -> Result<(
         "dump" =>  {
             dump::print_traces(pid, config, None)?;
         },
-        "record" => {
+        "record" | "datakit" => {
             record_samples(pid, config)?;
         },
         "top" => {
