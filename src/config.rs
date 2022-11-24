@@ -125,7 +125,7 @@ impl Default for Config {
                hide_progress: false, capture_output: true, dump_json: false, dump_locals: 0, subprocesses: false,
                full_filenames: false, lineno: LineNo::LastInstruction,
                host: String::from("127.0.0.1"),
-               port: 9527,
+               port: 9529,
                service: String::from("unnamed-service"),
                env: String::from("unnamed-env"),
                version: String::from("unnamed-version")
@@ -206,7 +206,7 @@ impl Config {
                 .value_name("port")
                 .help("The target datakit port")
                 .takes_value(true)
-                .default_value("9527"))
+                .default_value("9529"))
             .arg(Arg::new("service")
                 .short('S')
                 .long("service")
