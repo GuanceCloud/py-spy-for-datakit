@@ -6,10 +6,10 @@
 //! # Example:
 //!
 //! ```rust,no_run
-//! fn print_python_stacks(pid: py_spy::Pid) -> Result<(), anyhow::Error> {
+//! fn print_python_stacks(pid: py_spy_for_datakit::Pid) -> Result<(), anyhow::Error> {
 //!     // Create a new PythonSpy object with the default config options
-//!     let config = py_spy::Config::default();
-//!     let mut process = py_spy::PythonSpy::new(pid, &config)?;
+//!     let config = py_spy_for_datakit::Config::default();
+//!     let mut process = py_spy_for_datakit::PythonSpy::new(pid, &config)?;
 //!
 //!     // get stack traces for each thread in the process
 //!     let traces = process.get_stack_traces()?;
