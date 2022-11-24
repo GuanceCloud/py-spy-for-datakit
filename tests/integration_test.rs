@@ -376,7 +376,7 @@ fn test_negative_linenumber_increment() {
 fn test_delayed_subprocess() {
     let process = ScriptRunner::new("bash", "./tests/scripts/delayed_launch.sh");
     let config = Config{subprocesses: true, ..Default::default()};
-    let sampler = py_spy::sampler::Sampler::new(process.id(), &config).unwrap();
+    let sampler = py_spy_for_datakit::sampler::Sampler::new(process.id(), &config).unwrap();
     for sample in sampler {
         // should have one trace from the subprocess
         let traces = sample.traces;
