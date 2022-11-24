@@ -1,6 +1,6 @@
-extern crate py_spy;
+extern crate py_spy_for_datakit;
 use std::collections::HashSet;
-use py_spy::{Config, PythonSpy, Pid};
+use py_spy_for_datakit::{Config, PythonSpy, Pid};
 
 struct ScriptRunner {
     #[allow(dead_code)]
@@ -297,7 +297,7 @@ fn test_subprocesses() {
     let process = ScriptRunner::new("python", "./tests/scripts/subprocesses.py");
     std::thread::sleep(std::time::Duration::from_millis(1000));
     let config = Config{subprocesses: true, ..Default::default()};
-    let sampler = py_spy::sampler::Sampler::new(process.id(), &config).unwrap();
+    let sampler = py_spy_for_datakit::sampler::Sampler::new(process.id(), &config).unwrap();
     std::thread::sleep(std::time::Duration::from_millis(1000));
 
     // Get samples from all the subprocesses, verify that we got from all 3 processes
@@ -334,7 +334,7 @@ fn test_subprocesses_zombiechild() {
     let process = ScriptRunner::new("python", "./tests/scripts/subprocesses_zombie_child.py");
     std::thread::sleep(std::time::Duration::from_millis(200));
     let config = Config{subprocesses: true, ..Default::default()};
-    let _sampler = py_spy::sampler::Sampler::new(process.id(), &config).unwrap();
+    let _sampler = py_spy_for_datakit::sampler::Sampler::new(process.id(), &config).unwrap();
 }
 
 #[test]
