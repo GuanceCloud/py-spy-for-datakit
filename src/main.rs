@@ -240,6 +240,11 @@ fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error>
         }
     };
 
+    let max_total_intervals = match &config.loop_duration {
+        0 => None,
+        _ => Some(config.loop_duration * config.sampling_rate)
+    };
+
     use indicatif::ProgressBar;
     let progress = match (config.hide_progress, &config.duration) {
         (true, _) => ProgressBar::hidden(),
@@ -257,7 +262,9 @@ fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error>
 
     let mut errors = 0;
     let mut intervals = 0;
+    let mut total_intervals = 0;
     let mut samples = 0;
+    let mut loop_complete = false;
     println!();
 
     let running = Arc::new(AtomicBool::new(true));
@@ -294,6 +301,7 @@ fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error>
         }
 
         intervals += 1;
+        total_intervals += 1;
         if let Some(max_intervals) = max_intervals {
             if intervals >= max_intervals {
                 exit_message = "";
@@ -314,7 +322,15 @@ fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error>
 
                     output = new_output(config)?;
                     intervals = 0;
-                    profile_start_time = Utc::now()
+                    profile_start_time = Utc::now();
+
+                    if let Some(total) = max_total_intervals {
+                        if total_intervals >= total {
+                            loop_complete = true;
+                            break;
+                        }
+                    }
+
                 } else {
                     break;
                 }
@@ -378,13 +394,15 @@ fn record_samples(pid: remoteprocess::Pid, config: &Config) -> Result<(), Error>
     if config.command.as_str() == cmd_datakit {
         let mut buf:Vec<u8> = Vec::with_capacity(128);
         output.write(&mut buf)?;
-        if let Some(tx) = channel_sender {
-            if let Err(e) = tx.send(Sample{
-                start: profile_start_time,
-                end:Utc::now(),
-                payload: buf,
-            }) {
-                eprintln!("fail to send data to channel: {:?}", e)
+        if !loop_complete {
+            if let Some(tx) = channel_sender {
+                if let Err(e) = tx.send(Sample{
+                    start: profile_start_time,
+                    end:Utc::now(),
+                    payload: buf,
+                }) {
+                    eprintln!("fail to send data to channel: {:?}", e)
+                }
             }
         }
 

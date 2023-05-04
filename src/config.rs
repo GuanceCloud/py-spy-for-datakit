@@ -59,6 +59,7 @@ pub struct Config {
     pub service: String,
     pub env: String,
     pub version: String,
+    pub loop_duration: u64,
 }
 
 #[allow(non_camel_case_types)]
@@ -128,7 +129,8 @@ impl Default for Config {
                port: 9529,
                service: String::from("unnamed-service"),
                env: String::from("unnamed-env"),
-               version: String::from("unnamed-version")
+               version: String::from("unnamed-version"),
+               loop_duration: 0,
         }
     }
 }
@@ -238,6 +240,14 @@ impl Config {
                 .help("The number of seconds to sample for")
                 .default_value("60")
                 .takes_value(true))
+            .arg(Arg::new("loop")
+                .short('L')
+                .long("loop")
+                .value_name("loop")
+                .help("continuously run profiler in a loop within the specified seconds, 0 represents infinity")
+                .default_value("0")
+                .takes_value(true)
+            )
             .arg(rate.clone())
             .arg(subprocesses.clone())
             .arg(gil.clone())
@@ -381,7 +391,10 @@ impl Config {
                         None => RecordDuration::Seconds(60),
                         Some(seconds) => RecordDuration::Seconds(seconds.parse().expect("invalid duration"))
                     };
-
+                    config.loop_duration = match matches.value_of("loop") {
+                        None => 0,
+                        Some(seconds) => seconds.parse().expect("invalid loop parameter")
+                    };
                     config.host = match matches.value_of("host") {
                         Some(host) => host.to_owned(),
                         None => String::from("127.0.0.1")
