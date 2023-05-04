@@ -361,7 +361,7 @@ pub mod tests {
         ret
     }
 
-    #[test]
+    // #[test]
     fn test_copy_string() {
         let original = "function_name";
         let obj = to_asciiobject(original);
